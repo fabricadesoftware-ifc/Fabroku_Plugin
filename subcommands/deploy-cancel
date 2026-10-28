@@ -44,6 +44,7 @@ cmd-fabroku-deploy-cancel() {
   # Build interrompido deixa container parado preso ao volume de cache.
   app="$(fn-fabroku-read "$dir/app")"
   if [[ -n "$app" ]]; then
+    fn-fabroku-stop-build-containers "$app" "$GRACE"
     "$FABROKU_DOKKU_BIN" cleanup "$app" >/dev/null 2>&1 || true
   fi
 

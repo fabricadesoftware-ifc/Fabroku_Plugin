@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Docker de mentira: ps lista $FAKE_DOCKER_PS ("<id> <nome>" por linha), stop registra e tira da lista.
+case "$1" in
+  ps)
+    [[ -f "$FAKE_DOCKER_PS" ]] && cat "$FAKE_DOCKER_PS"
+    ;;
+  stop)
+    echo "docker $*" >>"$FAKE_DOKKU_CALLS"
+    : >"$FAKE_DOCKER_PS"
+    ;;
+esac
+exit 0

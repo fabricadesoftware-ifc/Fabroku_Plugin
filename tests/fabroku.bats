@@ -13,6 +13,8 @@ setup() {
   export FABROKU_DOKKU_BIN="$PLUGIN_ROOT/tests/fixtures/fake-dokku"
   export FAKE_DOKKU_CALLS="$BATS_TEST_TMPDIR/dokku-calls"
   export FAKE_DOKKU_MODE=success
+  export FABROKU_DOCKER_BIN="$PLUGIN_ROOT/tests/fixtures/fake-docker"
+  export FAKE_DOCKER_PS="$BATS_TEST_TMPDIR/docker-ps"
   mkdir -p "$DOKKU_ROOT/meu-app"
   : >"$FAKE_DOKKU_CALLS"
 }
@@ -198,6 +200,21 @@ read_full_log() {
   ! kill -0 "$pid" 2>/dev/null
   run pgrep -f "fake-dokku git:sync"
   [ "$status" -ne 0 ]
+}
+
+@test "cancelar para container de build que sobrou antes do cleanup, sem tocar no app no ar" {
+  export FAKE_DOKKU_MODE=slow
+  fabroku deploy meu-app "$GIT_URL" main "$DEPLOY_ID"
+  sleep 0.3
+  printf '%s\n' "abc123 festive_pike" "def456 meu-app.web.1" >"$FAKE_DOCKER_PS"
+
+  run fabroku deploy-cancel "$DEPLOY_ID" 1
+  [ "$status" -eq 0 ]
+  [ "$(json_field "$output" state)" = "cancelled" ]
+  stop_line="$(grep -n "docker stop -t 5 abc123$" "$FAKE_DOKKU_CALLS" | cut -d: -f1)"
+  cleanup_line="$(grep -n "^cleanup meu-app$" "$FAKE_DOKKU_CALLS" | cut -d: -f1)"
+  [ "$stop_line" -lt "$cleanup_line" ]
+  ! grep -q "def456" "$FAKE_DOKKU_CALLS"
 }
 
 @test "build que ignora SIGTERM leva SIGKILL depois do prazo" {

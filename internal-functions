@@ -16,6 +16,7 @@ FABROKU_DATA_ROOT="${FABROKU_DATA_ROOT:-${DOKKU_LIB_ROOT:-/var/lib/dokku}/data/f
 FABROKU_DEPLOYS_DIR="$FABROKU_DATA_ROOT/deploys"
 FABROKU_LOCKS_DIR="$FABROKU_DATA_ROOT/locks"
 FABROKU_DOKKU_BIN="${FABROKU_DOKKU_BIN:-dokku}"
+FABROKU_DOCKER_BIN="${FABROKU_DOCKER_BIN:-docker}"
 FABROKU_APPS_ROOT="${DOKKU_ROOT:-/home/dokku}"
 FABROKU_DEFAULT_LOG_CHUNK=65536
 FABROKU_MAX_LOG_CHUNK=1048576
@@ -95,6 +96,26 @@ fn-fabroku-runner-alive() {
   if [[ -r "/proc/$pid/cmdline" ]]; then
     tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -qF "$dir"
   fi
+}
+
+# Containers rodando do app com nome que não é <app>.<tipo>.<n>: build ou release em andamento.
+fn-fabroku-build-containers() {
+  declare app="$1"
+  "$FABROKU_DOCKER_BIN" ps --filter "label=com.dokku.app-name=$app" --format '{{.ID}} {{.Names}}' 2>/dev/null \
+    | awk -v prefix="$app." 'index($2, prefix) != 1 { print $1 }'
+}
+
+# Matar o dokku não para o container do build: ele recebe o sinal e sai sozinho uns
+# segundos depois, já depois do cleanup. Espera até o prazo e para quem sobrar.
+fn-fabroku-stop-build-containers() {
+  declare app="$1" grace="$2" ids _
+  for _ in $(seq $((grace * 2))); do
+    ids="$(fn-fabroku-build-containers "$app")"
+    [[ -n "$ids" ]] || return 0
+    sleep 0.5
+  done
+  # shellcheck disable=SC2086
+  "$FABROKU_DOCKER_BIN" stop -t 5 $ids >/dev/null 2>&1 || true
 }
 
 fn-fabroku-state() {
