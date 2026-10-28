@@ -11,6 +11,7 @@ fn-fabroku-help-content() {
     fabroku:deploy-follow <deploy-id> [offset], Segue o log cru do deploy até o build terminar
     fabroku:deploy-status <deploy-id>, Estado do deploy (running, succeeded, failed, cancelled, lost)
     fabroku:deploy-cancel <deploy-id> [segundos], Cancela o deploy e limpa containers parados
+    fabroku:cleanup <app>, Remove containers parados do app (funciona com DOKKU_SKIP_CLEANUP)
     fabroku:gc [dias], Apaga deploys finalizados há mais de N dias (padrão 7)
 help_content
 }

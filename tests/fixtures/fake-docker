@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
-# Docker de mentira: ps lista $FAKE_DOCKER_PS ("<id> <nome>" por linha), stop registra e tira da lista.
+# Docker de mentira. "<id> <nome>" por linha:
+#   $FAKE_DOCKER_PS      containers rodando (ps)
+#   $FAKE_DOCKER_EXITED  containers parados (ps -a com filtro de status)
+# stop move os rodando para parados; rm apaga os parados. Os dois registram a chamada.
 case "$1" in
   ps)
-    [[ -f "$FAKE_DOCKER_PS" ]] && cat "$FAKE_DOCKER_PS"
+    if [[ " $* " == *" -a "* ]]; then
+      [[ -f "$FAKE_DOCKER_EXITED" ]] && cut -d' ' -f1 "$FAKE_DOCKER_EXITED"
+    else
+      [[ -f "$FAKE_DOCKER_PS" ]] && cat "$FAKE_DOCKER_PS"
+    fi
     ;;
   stop)
     echo "docker $*" >>"$FAKE_DOKKU_CALLS"
-    : >"$FAKE_DOCKER_PS"
+    shift 3 # stop -t <segundos>
+    for id in "$@"; do
+      grep "^$id " "$FAKE_DOCKER_PS" >>"$FAKE_DOCKER_EXITED"
+      grep -v "^$id " "$FAKE_DOCKER_PS" >"$FAKE_DOCKER_PS.tmp"
+      mv "$FAKE_DOCKER_PS.tmp" "$FAKE_DOCKER_PS"
+    done
+    ;;
+  rm)
+    echo "docker $*" >>"$FAKE_DOKKU_CALLS"
+    : >"$FAKE_DOCKER_EXITED"
     ;;
 esac
 exit 0

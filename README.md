@@ -15,7 +15,8 @@ Todas as respostas são JSON numa linha. Erros saem com exit code 1 e `{"error":
 | `fabroku:deploy-log <deploy-id> <offset> [max-bytes]` | Lê o log a partir de um byte (base64), com o estado e `eof` |
 | `fabroku:deploy-follow <deploy-id> [offset]` | Manda o log cru a partir de um byte e segue até o build terminar (uma conexão por deploy) |
 | `fabroku:deploy-status <deploy-id>` | Estado: `running`, `succeeded`, `failed`, `cancelled` ou `lost` |
-| `fabroku:deploy-cancel <deploy-id> [segundos]` | SIGTERM no build, SIGKILL após o prazo (padrão 10 s), `dokku cleanup` |
+| `fabroku:deploy-cancel <deploy-id> [segundos]` | SIGTERM no build, SIGKILL após o prazo (padrão 10 s), para containers do build que sobraram e remove os parados |
+| `fabroku:cleanup <app>` | Remove containers parados do app, mesmo com `DOKKU_SKIP_CLEANUP` ligado (o `dokku cleanup` não faz nada nesse caso) |
 | `fabroku:gc [dias]` | Apaga deploys finalizados há mais de N dias (padrão 7) |
 
 ## Instalação

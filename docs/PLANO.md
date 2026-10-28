@@ -184,4 +184,9 @@ deploy no mesmo app com outro rodando volta `app_busy`, em vez de dois builds si
   por deploy (~36 num build de 2 min). O follow manda o log cru com `tail -f --pid=<runner>`
   numa conexão só e sai quando o build termina; o Fabroku conta os bytes e, se a conexão
   cair, reconecta a partir do último byte. O `deploy-log` continua para o backend antigo.
+- **Containers parados no cancelamento (0.2.1/0.3.0):** testado no servidor em 28/10, o cancelamento
+  deixava o container do build parado. Duas causas: o container recebe o sinal e só sai depois do
+  cleanup, e o servidor tem `DOKKU_SKIP_CLEANUP` ligado, então `dokku cleanup` não faz nada. O
+  `deploy-cancel` agora espera o container do build sair (ou para ele) e remove os parados com
+  `docker rm`; `fabroku:cleanup <app>` faz a mesma remoção para o Fabroku usar ao apagar app.
 - Decisão registrada no backend em `docs/adr/0003-deploy-pelo-plugin-fabroku.md`.

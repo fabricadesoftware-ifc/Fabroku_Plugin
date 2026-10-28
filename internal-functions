@@ -10,7 +10,7 @@
 set -eo pipefail
 [[ $DOKKU_TRACE ]] && set -x
 
-FABROKU_PLUGIN_VERSION="0.2.0"
+FABROKU_PLUGIN_VERSION="0.3.0"
 FABROKU_PLUGIN_ROOT="${FABROKU_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 FABROKU_DATA_ROOT="${FABROKU_DATA_ROOT:-${DOKKU_LIB_ROOT:-/var/lib/dokku}/data/fabroku}"
 FABROKU_DEPLOYS_DIR="$FABROKU_DATA_ROOT/deploys"
@@ -116,6 +116,21 @@ fn-fabroku-stop-build-containers() {
   done
   # shellcheck disable=SC2086
   "$FABROKU_DOCKER_BIN" stop -t 5 $ids >/dev/null 2>&1 || true
+}
+
+# O `dokku cleanup` não faz nada com DOKKU_SKIP_CLEANUP ligado; isto remove direto.
+# Imprime quantos containers foram removidos.
+fn-fabroku-remove-stopped-containers() {
+  declare app="$1" ids
+  ids="$("$FABROKU_DOCKER_BIN" ps -a --filter "label=com.dokku.app-name=$app" \
+    --filter status=exited --filter status=dead --format '{{.ID}}' 2>/dev/null || true)"
+  if [[ -z "$ids" ]]; then
+    echo 0
+    return
+  fi
+  # shellcheck disable=SC2086
+  "$FABROKU_DOCKER_BIN" rm $ids >/dev/null 2>&1 || true
+  wc -w <<<"$ids"
 }
 
 fn-fabroku-state() {

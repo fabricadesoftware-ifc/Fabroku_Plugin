@@ -45,6 +45,7 @@ cmd-fabroku-deploy-cancel() {
   app="$(fn-fabroku-read "$dir/app")"
   if [[ -n "$app" ]]; then
     fn-fabroku-stop-build-containers "$app" "$GRACE"
+    fn-fabroku-remove-stopped-containers "$app" >/dev/null
     "$FABROKU_DOKKU_BIN" cleanup "$app" >/dev/null 2>&1 || true
   fi
 

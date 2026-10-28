@@ -15,6 +15,7 @@ setup() {
   export FAKE_DOKKU_MODE=success
   export FABROKU_DOCKER_BIN="$PLUGIN_ROOT/tests/fixtures/fake-docker"
   export FAKE_DOCKER_PS="$BATS_TEST_TMPDIR/docker-ps"
+  export FAKE_DOCKER_EXITED="$BATS_TEST_TMPDIR/docker-exited"
   mkdir -p "$DOKKU_ROOT/meu-app"
   : >"$FAKE_DOKKU_CALLS"
 }
@@ -212,9 +213,24 @@ read_full_log() {
   [ "$status" -eq 0 ]
   [ "$(json_field "$output" state)" = "cancelled" ]
   stop_line="$(grep -n "docker stop -t 5 abc123$" "$FAKE_DOKKU_CALLS" | cut -d: -f1)"
-  cleanup_line="$(grep -n "^cleanup meu-app$" "$FAKE_DOKKU_CALLS" | cut -d: -f1)"
-  [ "$stop_line" -lt "$cleanup_line" ]
+  rm_line="$(grep -n "^docker rm abc123$" "$FAKE_DOKKU_CALLS" | cut -d: -f1)"
+  [ "$stop_line" -lt "$rm_line" ]
   ! grep -q "def456" "$FAKE_DOKKU_CALLS"
+}
+
+@test "cleanup remove containers parados mesmo sem o dokku cleanup" {
+  printf '%s\n' "aaa111 festive_pike" "bbb222 distracted_mclean" >"$FAKE_DOCKER_EXITED"
+
+  run fabroku cleanup meu-app
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"app":"meu-app","removed":2}' ]
+  grep -qx "docker rm aaa111 bbb222" "$FAKE_DOKKU_CALLS"
+
+  run fabroku cleanup meu-app
+  [ "$output" = '{"app":"meu-app","removed":0}' ]
+
+  run fabroku cleanup app-inexistente
+  [ "$(json_field "$output" error)" = "app_not_found" ]
 }
 
 @test "build que ignora SIGTERM leva SIGKILL depois do prazo" {

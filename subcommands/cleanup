@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+cmd-fabroku-cleanup() {
+  declare desc="remove containers parados do app, mesmo com DOKKU_SKIP_CLEANUP"
+  [[ "$1" == "fabroku:cleanup" ]] && shift 1
+  declare APP="$1"
+  [[ $# -eq 1 ]] || fn-fabroku-error usage "uso: fabroku:cleanup <app>"
+
+  fn-fabroku-validate-app "$APP"
+  printf '{"app":"%s","removed":%d}\n' "$APP" "$(fn-fabroku-remove-stopped-containers "$APP")"
+}
+
+cmd-fabroku-cleanup "$@"
