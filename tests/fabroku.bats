@@ -128,6 +128,38 @@ read_full_log() {
   [ "$(json_field "$response" eof)" = "true" ]
 }
 
+@test "follow manda o log inteiro e sai quando o build termina" {
+  fabroku deploy meu-app "$GIT_URL" main "$DEPLOY_ID"
+  out="$BATS_TEST_TMPDIR/follow.out"
+  timeout 10 "$PLUGIN_ROOT/subcommands/deploy-follow" fabroku:deploy-follow "$DEPLOY_ID" >"$out"
+
+  [ "$(json_field "$(fabroku deploy-status "$DEPLOY_ID")" state)" = "succeeded" ]
+  cmp "$out" "$FABROKU_DATA_ROOT/deploys/$DEPLOY_ID/output.log"
+  grep -q "Application deployed" "$out"
+}
+
+@test "follow a partir de um offset manda so o resto" {
+  fabroku deploy meu-app "$GIT_URL" main "$DEPLOY_ID"
+  wait_state "$DEPLOY_ID" succeeded
+  log="$FABROKU_DATA_ROOT/deploys/$DEPLOY_ID/output.log"
+
+  [ "$(fabroku deploy-follow "$DEPLOY_ID" 10)" = "$(tail -c +11 "$log")" ]
+  [ "$(fabroku deploy-follow "$DEPLOY_ID" 999999)" = "" ]
+}
+
+@test "follow sai quando o deploy e cancelado" {
+  export FAKE_DOKKU_MODE=slow
+  fabroku deploy meu-app "$GIT_URL" main "$DEPLOY_ID"
+  out="$BATS_TEST_TMPDIR/follow.out"
+  timeout 20 "$PLUGIN_ROOT/subcommands/deploy-follow" fabroku:deploy-follow "$DEPLOY_ID" >"$out" &
+  follow=$!
+  sleep 0.5
+
+  fabroku deploy-cancel "$DEPLOY_ID"
+  wait "$follow"
+  grep -q "build line 1" "$out"
+}
+
 @test "segundo deploy no mesmo app volta app_busy; trava some quando o build termina" {
   export FAKE_DOKKU_MODE=slow
   fabroku deploy meu-app "$GIT_URL" main "$DEPLOY_ID"

@@ -8,6 +8,7 @@ fn-fabroku-help-content() {
     fabroku:version, Versão do plugin (JSON)
     fabroku:deploy <app> <git-url> <branch> <deploy-id>, Inicia git:sync --build fora da sessão SSH
     fabroku:deploy-log <deploy-id> <offset> [max-bytes], Lê o log do deploy a partir de um offset
+    fabroku:deploy-follow <deploy-id> [offset], Segue o log cru do deploy até o build terminar
     fabroku:deploy-status <deploy-id>, Estado do deploy (running, succeeded, failed, cancelled, lost)
     fabroku:deploy-cancel <deploy-id> [segundos], Cancela o deploy e limpa containers parados
     fabroku:gc [dias], Apaga deploys finalizados há mais de N dias (padrão 7)

@@ -180,4 +180,8 @@ deploy no mesmo app com outro rodando volta `app_busy`, em vez de dois builds si
   o deploy), no máximo a cada 30 s por app, só para builds terminados há mais de 5 min.
 - **Auditoria SSH:** as leituras de log não geram registro de auditoria; `deploy`, `status`
   e `cancel` geram.
+- **`fabroku:deploy-follow` (0.2.0):** o polling do 0.1.0 abria uma conexão SSH a cada ~3 s
+  por deploy (~36 num build de 2 min). O follow manda o log cru com `tail -f --pid=<runner>`
+  numa conexão só e sai quando o build termina; o Fabroku conta os bytes e, se a conexão
+  cair, reconecta a partir do último byte. O `deploy-log` continua para o backend antigo.
 - Decisão registrada no backend em `docs/adr/0003-deploy-pelo-plugin-fabroku.md`.

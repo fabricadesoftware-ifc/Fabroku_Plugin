@@ -10,7 +10,7 @@
 set -eo pipefail
 [[ $DOKKU_TRACE ]] && set -x
 
-FABROKU_PLUGIN_VERSION="0.1.0"
+FABROKU_PLUGIN_VERSION="0.2.0"
 FABROKU_PLUGIN_ROOT="${FABROKU_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 FABROKU_DATA_ROOT="${FABROKU_DATA_ROOT:-${DOKKU_LIB_ROOT:-/var/lib/dokku}/data/fabroku}"
 FABROKU_DEPLOYS_DIR="$FABROKU_DATA_ROOT/deploys"

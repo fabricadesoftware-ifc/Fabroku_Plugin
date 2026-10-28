@@ -13,6 +13,7 @@ Todas as respostas são JSON numa linha. Erros saem com exit code 1 e `{"error":
 | `fabroku:version` | Versão instalada |
 | `fabroku:deploy <app> <git-url> <branch> <deploy-id>` | Inicia o build em segundo plano e retorna na hora |
 | `fabroku:deploy-log <deploy-id> <offset> [max-bytes]` | Lê o log a partir de um byte (base64), com o estado e `eof` |
+| `fabroku:deploy-follow <deploy-id> [offset]` | Manda o log cru a partir de um byte e segue até o build terminar (uma conexão por deploy) |
 | `fabroku:deploy-status <deploy-id>` | Estado: `running`, `succeeded`, `failed`, `cancelled` ou `lost` |
 | `fabroku:deploy-cancel <deploy-id> [segundos]` | SIGTERM no build, SIGKILL após o prazo (padrão 10 s), `dokku cleanup` |
 | `fabroku:gc [dias]` | Apaga deploys finalizados há mais de N dias (padrão 7) |

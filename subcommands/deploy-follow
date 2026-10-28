@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+cmd-fabroku-deploy-follow() {
+  declare desc="manda o log cru a partir de um offset e segue até o build terminar"
+  [[ "$1" == "fabroku:deploy-follow" ]] && shift 1
+  declare DEPLOY_ID="$1" OFFSET="${2:-0}"
+  [[ $# -eq 1 || $# -eq 2 ]] || fn-fabroku-error usage "uso: fabroku:deploy-follow <deploy-id> [offset]"
+
+  fn-fabroku-require-deploy "$DEPLOY_ID"
+  fn-fabroku-validate-number "$OFFSET" offset
+
+  declare dir log pid
+  dir="$(fn-fabroku-deploy-dir "$DEPLOY_ID")"
+  log="$dir/output.log"
+  # Runner iniciando: espera o pid e o log existirem antes de seguir.
+  while [[ ! -f "$dir/pid" || ! -f "$log" ]] && [[ "$(fn-fabroku-state "$dir")" == "running" ]]; do
+    sleep 0.2
+  done
+  [[ -f "$log" ]] || exit 0
+
+  # Sem framing: quem chama conta os bytes recebidos para saber o próximo offset.
+  # Com --pid o tail lê o resto do arquivo e sai quando o runner termina.
+  pid="$(fn-fabroku-read "$dir/pid")"
+  if [[ -n "$pid" && "$(fn-fabroku-state "$dir")" == "running" ]]; then
+    exec tail -c "+$((OFFSET + 1))" -f -s 0.5 --pid="$pid" "$log"
+  fi
+  exec tail -c "+$((OFFSET + 1))" "$log"
+}
+
+cmd-fabroku-deploy-follow "$@"
