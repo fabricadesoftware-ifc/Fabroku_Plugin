@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+cmd-fabroku-deploy() {
+  declare desc="inicia git:sync --build destacado da sessão SSH e retorna na hora"
+  [[ "$1" == "fabroku:deploy" ]] && shift 1
+  declare APP="$1" GIT_URL="$2" BRANCH="$3" DEPLOY_ID="$4"
+  [[ $# -eq 4 ]] || fn-fabroku-error usage "uso: fabroku:deploy <app> <git-url> <branch> <deploy-id>"
+
+  fn-fabroku-validate-app "$APP"
+  fn-fabroku-validate-git-url "$GIT_URL"
+  fn-fabroku-validate-branch "$BRANCH"
+  fn-fabroku-validate-deploy-id "$DEPLOY_ID"
+  fn-fabroku-ensure-dirs
+
+  declare dir _
+  dir="$(fn-fabroku-deploy-dir "$DEPLOY_ID")"
+  [[ ! -e "$dir" ]] || fn-fabroku-error deploy_exists "ja existe um deploy com esse id"
+
+  # A trava fica no fd 9, herdado pelo runner: dura enquanto o build durar,
+  # mesmo depois que este comando (e a sessão SSH) terminar.
+  exec 9>"$FABROKU_LOCKS_DIR/$APP.lock"
+  flock -n 9 || fn-fabroku-error app_busy "outro deploy deste app esta em andamento"
+
+  (umask 077 && mkdir "$dir")
+  fn-fabroku-write "$dir/app" "$APP"
+  fn-fabroku-write "$dir/branch" "$BRANCH"
+  fn-fabroku-write "$dir/started_at" "$(fn-fabroku-now)"
+  : >"$dir/output.log"
+
+  setsid "$FABROKU_PLUGIN_ROOT/libexec/run-deploy" "$dir" "$APP" "$GIT_URL" "$BRANCH" </dev/null >/dev/null 2>&1 &
+
+  for _ in $(seq 50); do
+    [[ -f "$dir/pid" ]] && break
+    sleep 0.1
+  done
+  exec 9>&-
+
+  printf '{"id":"%s","state":"running"}\n' "$DEPLOY_ID"
+}
+
+cmd-fabroku-deploy "$@"

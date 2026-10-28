@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Dokku de mentira para os testes: só git:sync e cleanup.
+# FAKE_DOKKU_MODE escolhe o comportamento do git:sync.
+echo "$*" >>"$FAKE_DOKKU_CALLS"
+
+case "$1" in
+  git:sync)
+    echo "-----> Syncing $5 to $3"
+    case "${FAKE_DOKKU_MODE:-success}" in
+      success)
+        sleep 0.2
+        echo "-----> Building $3"
+        sleep 0.2
+        echo "=====> Application deployed"
+        ;;
+      fail)
+        echo " !     App build failed" >&2
+        exit 1
+        ;;
+      slow)
+        for i in $(seq 600); do
+          echo "build line $i"
+          sleep 0.1
+        done
+        ;;
+      stubborn)
+        trap '' TERM
+        for i in $(seq 600); do
+          echo "ignoring term $i"
+          sleep 0.1
+        done
+        ;;
+    esac
+    ;;
+  cleanup)
+    ;;
+  *)
+    echo "fake-dokku: comando inesperado $1" >&2
+    exit 2
+    ;;
+esac

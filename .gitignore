@@ -1,0 +1,4 @@
+# Logs e artefatos de teste locais
+*.log
+tests/tmp/
+.DS_Store

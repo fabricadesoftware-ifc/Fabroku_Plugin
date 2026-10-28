@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+cmd-fabroku-deploy-log() {
+  declare desc="pedaço do log a partir de um offset em bytes, em base64"
+  [[ "$1" == "fabroku:deploy-log" ]] && shift 1
+  declare DEPLOY_ID="$1" OFFSET="$2" MAX_BYTES="${3:-$FABROKU_DEFAULT_LOG_CHUNK}"
+  [[ $# -eq 2 || $# -eq 3 ]] || fn-fabroku-error usage "uso: fabroku:deploy-log <deploy-id> <offset> [max-bytes]"
+
+  fn-fabroku-require-deploy "$DEPLOY_ID"
+  fn-fabroku-validate-number "$OFFSET" offset
+  fn-fabroku-validate-number "$MAX_BYTES" max_bytes
+  ((MAX_BYTES <= FABROKU_MAX_LOG_CHUNK)) || MAX_BYTES="$FABROKU_MAX_LOG_CHUNK"
+
+  declare dir log state size count chunk="" eof=false
+  dir="$(fn-fabroku-deploy-dir "$DEPLOY_ID")"
+  log="$dir/output.log"
+  # Estado antes do tamanho: se o build já tinha terminado, o log lido está completo.
+  state="$(fn-fabroku-state "$dir")"
+  size="$(stat -c %s "$log" 2>/dev/null || echo 0)"
+
+  count=$((size - OFFSET))
+  ((count > 0)) || count=0
+  ((count <= MAX_BYTES)) || count="$MAX_BYTES"
+  if ((count > 0)); then
+    chunk="$(tail -c "+$((OFFSET + 1))" "$log" | head -c "$count" | base64 -w0)"
+  fi
+  if [[ "$state" != "running" ]] && ((OFFSET + count >= size)); then
+    eof=true
+  fi
+
+  printf '{"offset":%d,"next_offset":%d,"size":%d,"state":"%s","eof":%s,"chunk":"%s"}\n' \
+    "$OFFSET" "$((OFFSET + count))" "$size" "$state" "$eof" "$chunk"
+}
+
+cmd-fabroku-deploy-log "$@"

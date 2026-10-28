@@ -1,0 +1,4 @@
+# Convenção dos plugins Dokku: `declare desc=...` documenta o comando e as
+# constantes de internal-functions são usadas pelos subcomandos.
+disable=SC2034
+external-sources=true

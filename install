@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Trigger do Dokku: roda como root no plugin:install e no plugin:update.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/internal-functions"
+
+fn-fabroku-ensure-dirs
+chown -R "${DOKKU_SYSTEM_USER:-dokku}:${DOKKU_SYSTEM_GROUP:-dokku}" "$FABROKU_DATA_ROOT"
+chmod 700 "$FABROKU_DATA_ROOT" "$FABROKU_DEPLOYS_DIR" "$FABROKU_LOCKS_DIR"

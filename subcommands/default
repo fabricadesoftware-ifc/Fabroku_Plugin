@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+"$FABROKU_PLUGIN_ROOT/commands" fabroku:help

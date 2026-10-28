@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+cmd-fabroku-deploy-cancel() {
+  declare desc="cancela um deploy: SIGTERM no grupo, SIGKILL após o prazo, depois dokku cleanup"
+  [[ "$1" == "fabroku:deploy-cancel" ]] && shift 1
+  declare DEPLOY_ID="$1" GRACE="${2:-10}"
+  [[ $# -eq 1 || $# -eq 2 ]] || fn-fabroku-error usage "uso: fabroku:deploy-cancel <deploy-id> [segundos]"
+
+  fn-fabroku-require-deploy "$DEPLOY_ID"
+  fn-fabroku-validate-number "$GRACE" grace
+
+  declare dir pid app _
+  dir="$(fn-fabroku-deploy-dir "$DEPLOY_ID")"
+  if [[ "$(fn-fabroku-state "$dir")" != "running" ]]; then
+    fn-fabroku-status-json "$DEPLOY_ID"
+    return
+  fi
+
+  : >"$dir/cancelled"
+  for _ in $(seq 50); do
+    [[ -f "$dir/pid" ]] && break
+    sleep 0.1
+  done
+  pid="$(fn-fabroku-read "$dir/pid")"
+
+  if [[ -n "$pid" ]]; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    for _ in $(seq $((GRACE * 10))); do
+      fn-fabroku-runner-alive "$dir" || break
+      sleep 0.1
+    done
+    if fn-fabroku-runner-alive "$dir"; then
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      sleep 0.5
+    fi
+  fi
+
+  if [[ ! -f "$dir/exit_code" ]]; then
+    fn-fabroku-write "$dir/finished_at" "$(fn-fabroku-now)"
+    fn-fabroku-write "$dir/exit_code" 137
+  fi
+
+  # Build interrompido deixa container parado preso ao volume de cache.
+  app="$(fn-fabroku-read "$dir/app")"
+  if [[ -n "$app" ]]; then
+    "$FABROKU_DOKKU_BIN" cleanup "$app" >/dev/null 2>&1 || true
+  fi
+
+  fn-fabroku-status-json "$DEPLOY_ID"
+}
+
+cmd-fabroku-deploy-cancel "$@"

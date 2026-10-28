@@ -1,0 +1,24 @@
+name: 'tests'
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Cloning repo
+        uses: actions/checkout@v4
+
+      - name: Install bats and shellcheck
+        run: sudo apt-get update && sudo apt-get install -y bats shellcheck
+
+      - name: Shellcheck
+        run: shellcheck -s bash commands install internal-functions libexec/run-deploy subcommands/* tests/fixtures/fake-dokku
+
+      - name: Bats
+        run: bats tests

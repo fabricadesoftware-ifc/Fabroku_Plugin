@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Roda o build fora da sessão SSH (iniciado com setsid por fabroku:deploy).
+# Herda o fd 9 com a trava do app; ela é liberada quando este processo termina.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+set +e
+
+declare DIR="$1" APP="$2" GIT_URL="$3" BRANCH="$4" child code
+
+# Com o trap, o runner sobrevive ao SIGTERM do cancelamento (o git:sync recebe o
+# mesmo sinal pelo grupo) e ainda grava o exit_code.
+trap ':' TERM
+fn-fabroku-write "$DIR/pid" "$$"
+
+"$FABROKU_DOKKU_BIN" git:sync --build "$APP" "$GIT_URL" "$BRANCH" >>"$DIR/output.log" 2>&1 9>&- &
+child=$!
+wait "$child"
+code=$?
+# Um sinal interrompe o wait antes do filho terminar; espera de verdade.
+while kill -0 "$child" 2>/dev/null; do
+  wait "$child"
+  code=$?
+done
+
+fn-fabroku-write "$DIR/finished_at" "$(fn-fabroku-now)"
+[[ -f "$DIR/exit_code" ]] || fn-fabroku-write "$DIR/exit_code" "$code"

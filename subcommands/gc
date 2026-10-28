@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+cmd-fabroku-gc() {
+  declare desc="apaga deploys finalizados há mais de N dias (padrão 7)"
+  [[ "$1" == "fabroku:gc" ]] && shift 1
+  declare DAYS="${1:-7}"
+  [[ $# -le 1 ]] || fn-fabroku-error usage "uso: fabroku:gc [dias]"
+  fn-fabroku-validate-number "$DAYS" days
+
+  declare removed=0 dir
+  if [[ -d "$FABROKU_DEPLOYS_DIR" ]]; then
+    for dir in "$FABROKU_DEPLOYS_DIR"/*/; do
+      [[ -d "$dir" ]] || continue
+      dir="${dir%/}"
+      [[ "$(fn-fabroku-state "$dir")" != "running" ]] || continue
+      # O mtime do diretório muda quando o exit_code é criado: serve de data de fim.
+      [[ -n "$(find "$dir" -maxdepth 0 -mmin "+$((DAYS * 1440))")" ]] || continue
+      rm -rf -- "$dir"
+      removed=$((removed + 1))
+    done
+  fi
+
+  printf '{"removed":%d}\n' "$removed"
+}
+
+cmd-fabroku-gc "$@"

@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# Funções compartilhadas pelos comandos fabroku:*.
+#
+# Cada deploy vive em $FABROKU_DEPLOYS_DIR/<deploy-id>/, um arquivo por campo:
+#   app, branch, started_at  gravados por fabroku:deploy
+#   pid                      gravado pelo runner (pid = id do grupo de processos, via setsid)
+#   output.log               saída do git:sync --build
+#   finished_at, exit_code   gravados quando o build termina (exit_code por último)
+#   cancelled                criado quando o cancelamento é pedido
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+
+FABROKU_PLUGIN_VERSION="0.1.0"
+FABROKU_PLUGIN_ROOT="${FABROKU_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+FABROKU_DATA_ROOT="${FABROKU_DATA_ROOT:-${DOKKU_LIB_ROOT:-/var/lib/dokku}/data/fabroku}"
+FABROKU_DEPLOYS_DIR="$FABROKU_DATA_ROOT/deploys"
+FABROKU_LOCKS_DIR="$FABROKU_DATA_ROOT/locks"
+FABROKU_DOKKU_BIN="${FABROKU_DOKKU_BIN:-dokku}"
+FABROKU_APPS_ROOT="${DOKKU_ROOT:-/home/dokku}"
+FABROKU_DEFAULT_LOG_CHUNK=65536
+FABROKU_MAX_LOG_CHUNK=1048576
+# Sem pid ainda e diretório mais novo que isso = runner iniciando, não perdido.
+FABROKU_STARTING_GRACE_SECONDS=30
+export FABROKU_PLUGIN_ROOT FABROKU_DATA_ROOT FABROKU_DOKKU_BIN
+
+fn-fabroku-error() {
+  declare code="$1" message="$2"
+  # Códigos e mensagens são fixos (sem aspas), então não precisam de escape.
+  printf '{"error":"%s","message":"%s"}\n' "$code" "$message"
+  exit 1
+}
+
+fn-fabroku-ensure-dirs() {
+  (umask 077 && mkdir -p "$FABROKU_DEPLOYS_DIR" "$FABROKU_LOCKS_DIR")
+}
+
+fn-fabroku-validate-deploy-id() {
+  [[ "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
+    || fn-fabroku-error invalid_deploy_id "deploy-id deve ser um UUID em minusculas"
+}
+
+fn-fabroku-validate-app() {
+  [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fn-fabroku-error invalid_app "nome de app invalido"
+  [[ -d "$FABROKU_APPS_ROOT/$1" ]] || fn-fabroku-error app_not_found "app nao existe no Dokku"
+}
+
+fn-fabroku-validate-branch() {
+  declare branch="$1"
+  [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || fn-fabroku-error invalid_branch "branch com caracteres invalidos"
+  [[ "$branch" != -* && "$branch" != *..* ]] || fn-fabroku-error invalid_branch "branch invalida"
+}
+
+fn-fabroku-validate-git-url() {
+  [[ "$1" =~ ^https://[A-Za-z0-9._~:/?#@%+=_-]+$ ]] || fn-fabroku-error invalid_git_url "git-url deve ser https sem caracteres especiais"
+}
+
+fn-fabroku-validate-number() {
+  declare value="$1" name="$2"
+  [[ "$value" =~ ^[0-9]+$ ]] || fn-fabroku-error "invalid_$name" "$name deve ser um inteiro nao negativo"
+}
+
+fn-fabroku-deploy-dir() {
+  echo "$FABROKU_DEPLOYS_DIR/$1"
+}
+
+fn-fabroku-require-deploy() {
+  declare deploy_id="$1"
+  fn-fabroku-validate-deploy-id "$deploy_id"
+  [[ -d "$(fn-fabroku-deploy-dir "$deploy_id")" ]] || fn-fabroku-error deploy_not_found "deploy nao encontrado"
+}
+
+fn-fabroku-now() {
+  date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+fn-fabroku-read() {
+  declare file="$1"
+  [[ -f "$file" ]] && cat "$file"
+  return 0
+}
+
+# Grava de forma atômica: quem lê nunca vê o arquivo pela metade.
+fn-fabroku-write() {
+  declare file="$1" value="$2"
+  printf '%s\n' "$value" >"$file.tmp"
+  mv -f "$file.tmp" "$file"
+}
+
+fn-fabroku-runner-alive() {
+  declare dir="$1" pid
+  pid="$(fn-fabroku-read "$dir/pid")"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  # Confere que o pid ainda é o runner deste deploy (pid pode ser reaproveitado).
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -qF "$dir"
+  fi
+}
+
+fn-fabroku-state() {
+  declare dir="$1" exit_code age
+  exit_code="$(fn-fabroku-read "$dir/exit_code")"
+  if [[ -n "$exit_code" ]]; then
+    if [[ "$exit_code" == "0" ]]; then
+      echo succeeded
+    elif [[ -f "$dir/cancelled" ]]; then
+      echo cancelled
+    else
+      echo failed
+    fi
+    return
+  fi
+
+  if fn-fabroku-runner-alive "$dir"; then
+    echo running
+    return
+  fi
+
+  if [[ ! -f "$dir/pid" ]]; then
+    age=$(($(date +%s) - $(stat -c %Y "$dir")))
+    if ((age < FABROKU_STARTING_GRACE_SECONDS)); then
+      echo running
+      return
+    fi
+  fi
+  # Runner sumiu sem gravar exit_code (servidor reiniciou, processo morto por fora).
+  echo lost
+}
+
+fn-fabroku-json-or-null() {
+  declare value="$1" kind="$2"
+  if [[ -z "$value" ]]; then
+    echo null
+  elif [[ "$kind" == "number" ]]; then
+    echo "$value"
+  else
+    printf '"%s"' "$value"
+  fi
+}
+
+fn-fabroku-status-json() {
+  declare deploy_id="$1" dir state
+  dir="$(fn-fabroku-deploy-dir "$deploy_id")"
+  state="$(fn-fabroku-state "$dir")"
+  printf '{"id":"%s","app":%s,"state":"%s","exit_code":%s,"started_at":%s,"finished_at":%s}\n' \
+    "$deploy_id" \
+    "$(fn-fabroku-json-or-null "$(fn-fabroku-read "$dir/app")")" \
+    "$state" \
+    "$(fn-fabroku-json-or-null "$(fn-fabroku-read "$dir/exit_code")" number)" \
+    "$(fn-fabroku-json-or-null "$(fn-fabroku-read "$dir/started_at")")" \
+    "$(fn-fabroku-json-or-null "$(fn-fabroku-read "$dir/finished_at")")"
+}

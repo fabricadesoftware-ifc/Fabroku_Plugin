@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+cmd-fabroku-version() {
+  declare desc="versão do plugin, em JSON"
+  [[ "$1" == "fabroku:version" ]] && shift 1
+  printf '{"version":"%s"}\n' "$FABROKU_PLUGIN_VERSION"
+}
+
+cmd-fabroku-version "$@"

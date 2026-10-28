@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-functions"
+
+cmd-fabroku-deploy-status() {
+  declare desc="estado de um deploy, em JSON"
+  [[ "$1" == "fabroku:deploy-status" ]] && shift 1
+  declare DEPLOY_ID="$1"
+  [[ $# -eq 1 ]] || fn-fabroku-error usage "uso: fabroku:deploy-status <deploy-id>"
+
+  fn-fabroku-require-deploy "$DEPLOY_ID"
+  fn-fabroku-status-json "$DEPLOY_ID"
+}
+
+cmd-fabroku-deploy-status "$@"
