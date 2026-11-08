@@ -6,16 +6,7 @@ fn-fabroku-ensure-dirs
 chown -R "${DOKKU_SYSTEM_USER:-dokku}:${DOKKU_SYSTEM_GROUP:-dokku}" "$FABROKU_DATA_ROOT"
 chmod 700 "$FABROKU_DATA_ROOT" "$FABROKU_DEPLOYS_DIR" "$FABROKU_LOCKS_DIR"
 
-# Instala o 00-fabroku-guard como plugin separado: o nome com "00-" faz o plugn rodar o
-# core-post-extract dele antes dos plugins do Dokku que leem/executam arquivos do repositório.
-PLUGINS_DIR="${PLUGIN_PATH:-/var/lib/dokku/plugins}"
-GUARD_NAME="00-fabroku-guard"
-if [[ -d "$PLUGINS_DIR/available" && -d "$PLUGINS_DIR/enabled" ]]; then
-  rm -rf "${PLUGINS_DIR:?}/available/$GUARD_NAME"
-  cp -R "$FABROKU_PLUGIN_ROOT/guard" "$PLUGINS_DIR/available/$GUARD_NAME"
-  chmod 755 "$PLUGINS_DIR/available/$GUARD_NAME/core-post-extract"
-  ln -sfn "$PLUGINS_DIR/available/$GUARD_NAME" "$PLUGINS_DIR/enabled/$GUARD_NAME"
-else
-  echo "fabroku: $PLUGINS_DIR/{available,enabled} não existe; $GUARD_NAME NÃO foi instalado" >&2
-  exit 1
-fi
+# Instala o 00-fabroku-guard (plugin separado; o nome 00- faz rodar antes dos
+# plugins do Dokku). Em plugin:update o trigger install NAO roda, entao rode
+# manualmente depois:  sudo bash guard/enable.sh
+bash "$FABROKU_PLUGIN_ROOT/guard/enable.sh" || echo "fabroku: falha ao instalar 00-fabroku-guard" >&2

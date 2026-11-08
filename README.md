@@ -55,6 +55,17 @@ antes dos plugins do Dokku e, na pasta de build, **remove**:
 Ele remove em vez de falhar porque o `plugn` roda todos os hooks mesmo quando um sai com erro.
 Use também `dokku nginx:set --global disable-custom-config true`, liberando só apps nossos.
 
+**Importante:** `dokku plugin:update` NÃO roda o trigger `install`, então o guard
+não é reinstalado sozinho num update. Depois de atualizar o plugin, rode uma vez:
+
+```bash
+sudo bash /var/lib/dokku/plugins/available/fabroku/guard/enable.sh
+```
+
+O `enable.sh` é idempotente e instala/atualiza o `00-fabroku-guard` a partir de
+`guard/`. Confira com `ls /var/lib/dokku/plugins/enabled | head` (deve aparecer
+`00-fabroku-guard`).
+
 ## Estrutura
 
 ```
@@ -64,7 +75,7 @@ install             trigger do Dokku: cria /var/lib/dokku/data/fabroku
 internal-functions  validação, estado e JSON compartilhados
 subcommands/        um executável por comando fabroku:*
 libexec/run-deploy  roda o git:sync --build fora da sessão SSH
-guard/              plugin 00-fabroku-guard, instalado junto pelo install (ver abaixo)
+guard/              plugin 00-fabroku-guard + enable.sh (ver abaixo)
 tests/              testes bats com um Dokku de mentira
 docs/PLANO.md       desenho e decisões
 ```
