@@ -38,6 +38,23 @@ Depois, no backend do Fabroku: `DOKKU_REMOTE_DEPLOY_PLUGIN=true`.
 
 Atualizar: `sudo dokku plugin:update fabroku`.
 
+## Proteção do servidor (00-fabroku-guard)
+
+O Dokku confia em quem faz push, mas no Fabroku o repositório é do aluno. Sem proteção, o Dokku
+executaria ou leria partes do repositório **no servidor**: `CHECKS` e `nginx.conf.sigil` passam
+pelo `sigil` (que tem `{{ sh }}`, `{{ file }}`, `{{ httpget }}`), e `.env`, `app.json`, `Procfile`
+etc. são copiados seguindo links simbólicos (ex.: `.env -> /var/lib/dokku/config/<outro-app>/ENV`).
+
+O `install` instala o plugin `00-fabroku-guard` (pasta `guard/`). O `core-post-extract` dele roda
+antes dos plugins do Dokku e, na pasta de build, **remove**:
+
+- links simbólicos que apontam para fora do repositório;
+- `CHECKS` com qualquer `{{ }}`;
+- `nginx.conf.sigil` que usa funções do sigil que acessam o servidor (variáveis como `{{ $.APP }}` passam).
+
+Ele remove em vez de falhar porque o `plugn` roda todos os hooks mesmo quando um sai com erro.
+Use também `dokku nginx:set --global disable-custom-config true`, liberando só apps nossos.
+
 ## Estrutura
 
 ```
@@ -47,6 +64,7 @@ install             trigger do Dokku: cria /var/lib/dokku/data/fabroku
 internal-functions  validação, estado e JSON compartilhados
 subcommands/        um executável por comando fabroku:*
 libexec/run-deploy  roda o git:sync --build fora da sessão SSH
+guard/              plugin 00-fabroku-guard, instalado junto pelo install (ver abaixo)
 tests/              testes bats com um Dokku de mentira
 docs/PLANO.md       desenho e decisões
 ```
@@ -56,7 +74,7 @@ docs/PLANO.md       desenho e decisões
 Precisa de `bats` e `shellcheck` (Linux ou WSL):
 
 ```bash
-shellcheck -s bash commands install internal-functions libexec/run-deploy subcommands/* tests/fixtures/fake-dokku
+shellcheck -s bash commands install internal-functions libexec/run-deploy guard/core-post-extract subcommands/* tests/fixtures/fake-dokku
 bats tests
 ```
 

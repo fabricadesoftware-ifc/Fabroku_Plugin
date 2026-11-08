@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Trigger core-post-extract do Dokku: roda com o código do app já extraído em $2, antes do build.
+#
+# Por que existe: o Dokku confia em quem faz push. No Fabroku o repositório é do aluno, e o Dokku
+# lê ou executa partes dele NO HOST, como usuário dokku (grupo docker = root na prática):
+#   - CHECKS e nginx.conf.sigil passam pelo sigil, que tem {{ sh }}, {{ file }}, {{ httpget }}...
+#   - .env, app.json, Procfile, project.toml etc. são copiados seguindo links simbólicos,
+#     então `.env -> /var/lib/dokku/config/<outro-app>/ENV` vazaria segredos para o build.
+#
+# O plugn roda todos os hooks mesmo quando um falha, então aqui não adianta sair com erro:
+# o arquivo perigoso é REMOVIDO da pasta de build. Este plugin se chama 00-fabroku-guard para
+# rodar antes de app-json, builder-*, nginx-vhosts e scheduler-docker-local.
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+
+declare APP="$1" WORK_DIR="$2"
+# Funções do sigil que leem arquivos, executam comandos ou buscam URLs no host.
+SIGIL_DANGEROUS='(^|[^A-Za-z0-9_.$])(sh|file|httpget|include|exists|dir|dirs|files|text|stdin|render)([^A-Za-z0-9_]|$)'
+
+guard-log() { echo "=====> fabroku-guard ($APP): $*"; }
+
+guard-sigil-is-dangerous() {
+  # Junta as linhas: uma ação {{ ... }} pode quebrar linha.
+  tr '\n' ' ' <"$1" | grep -oE '\{\{[^}]*\}\}' | grep -qE "$SIGIL_DANGEROUS"
+}
+
+guard-main() {
+  [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] || return 0
+  local work_real link target file
+  work_real="$(realpath -- "$WORK_DIR")"
+
+  # 1. Links simbólicos que apontam para fora do código do app.
+  while IFS= read -r -d '' link; do
+    target="$(realpath -m -- "$link")"
+    if [[ "$target" != "$work_real" && "$target" != "$work_real/"* ]]; then
+      rm -f -- "$link"
+      guard-log "link simbólico removido: ${link#"$WORK_DIR"/} (aponta para fora do repositório)"
+    fi
+  done < <(find "$WORK_DIR" -type l -print0)
+
+  # 2. CHECKS com qualquer template: o arquivo inteiro passa pelo sigil no host.
+  if [[ -f "$WORK_DIR/CHECKS" ]] && grep -q '{{' "$WORK_DIR/CHECKS"; then
+    rm -f -- "$WORK_DIR/CHECKS"
+    guard-log "CHECKS removido: templates {{ }} não são permitidos (usar healthchecks do app.json)"
+  fi
+
+  # 3. nginx.conf.sigil com funções do sigil que tocam o host (variáveis como {{ $.APP }} passam).
+  while IFS= read -r -d '' file; do
+    if guard-sigil-is-dangerous "$file"; then
+      rm -f -- "$file"
+      guard-log "${file#"$WORK_DIR"/} removido: usa funções do sigil que acessam o servidor"
+    fi
+  done < <(find "$WORK_DIR" -maxdepth 3 -type f -name 'nginx.conf.sigil' -print0)
+}
+
+guard-main

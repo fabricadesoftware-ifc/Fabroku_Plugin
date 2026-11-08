@@ -1,0 +1,4 @@
+[plugin]
+description = "Fabroku: neutraliza arquivos do repositório que o Dokku leria ou executaria no host"
+version = "0.1.0"
+[plugin.config]
