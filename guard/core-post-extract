@@ -19,9 +19,58 @@ SIGIL_DANGEROUS='(^|[^A-Za-z0-9_.$])(sh|file|httpget|include|exists|dir|dirs|fil
 
 guard-log() { echo "=====> fabroku-guard ($APP): $*"; }
 
+# Imprime uma linha por ação {{ ... }} do template, já sem o conteúdo de strings, caracteres
+# e comentários, seguindo o lexer de text/template do Go (um `}}` dentro de string não fecha
+# a ação). Ação que não fecha até o fim do arquivo sai marcada como UNTERMINATED.
+guard-sigil-actions() {
+  awk '
+    { text = text $0 "\n" }
+    END {
+      n = length(text); state = "text"; body = ""; i = 1
+      while (i <= n) {
+        c = substr(text, i, 1); two = substr(text, i, 2)
+        if (state == "text") {
+          if (two == "{{") { state = "action"; body = ""; i += 2 } else { i++ }
+        } else if (state == "action") {
+          if (two == "}}") { print body; state = "text"; i += 2 }
+          else if (two == "/*") { state = "comment"; i += 2 }
+          else if (c == "\"") { state = "dq"; body = body " \"\" "; i++ }
+          else if (c == "`") { state = "raw"; body = body " \"\" "; i++ }
+          else if (c == "\047") { state = "char"; body = body " \"\" "; i++ }
+          else { body = body ((c == "\n" || c == "\r" || c == "\t") ? " " : c); i++ }
+        } else if (state == "dq" || state == "char") {
+          if (c == "\\") { i += 2 }
+          else if ((state == "dq" && c == "\"") || (state == "char" && c == "\047")) { state = "action"; i++ }
+          else { i++ }
+        } else if (state == "raw") {
+          if (c == "`") { state = "action" }
+          i++
+        } else if (state == "comment") {
+          if (two == "*/") { state = "action"; i += 2 } else { i++ }
+        }
+      }
+      if (state != "text") { print body " UNTERMINATED" }
+    }
+  ' "$1"
+}
+
 guard-sigil-is-dangerous() {
-  # Junta as linhas: uma ação {{ ... }} pode quebrar linha.
-  tr '\n' ' ' <"$1" | grep -oE '\{\{[^}]*\}\}' | grep -qE "$SIGIL_DANGEROUS"
+  local actions
+  actions="$(guard-sigil-actions "$1")" || return 0 # na dúvida, trata como perigoso
+  grep -q 'UNTERMINATED$' <<<"$actions" && return 0
+  grep -qE "$SIGIL_DANGEROUS" <<<"$actions"
+}
+
+# Com delimitadores do sigil alterados no config, as checagens de {{ }} não valem.
+guard-sigil-delims-overridden() {
+  [[ -n "$PLUGIN_AVAILABLE_PATH" && -f "$PLUGIN_AVAILABLE_PATH/config/functions" ]] || return 1
+  local value
+  value="$( (
+    source "$PLUGIN_AVAILABLE_PATH/config/functions"
+    config_get "$APP" SIGIL_DELIMS || true
+    config_get --global SIGIL_DELIMS || true
+  ) 2>/dev/null || true)"
+  [[ -n "$value" ]]
 }
 
 guard-main() {
@@ -51,6 +100,14 @@ guard-main() {
       guard-log "${file#"$WORK_DIR"/} removido: usa funções do sigil que acessam o servidor"
     fi
   done < <(find "$WORK_DIR" -maxdepth 3 -type f -name 'nginx.conf.sigil' -print0)
+
+  # 4. Delimitadores trocados por SIGIL_DELIMS: nenhum arquivo que passa pelo sigil é confiável.
+  if guard-sigil-delims-overridden; then
+    while IFS= read -r -d '' file; do
+      rm -f -- "$file"
+      guard-log "${file#"$WORK_DIR"/} removido: SIGIL_DELIMS está definido no config do app"
+    done < <(find "$WORK_DIR" -maxdepth 3 -type f \( -name 'nginx.conf.sigil' -o -name 'CHECKS' \) -print0)
+  fi
 }
 
 guard-main

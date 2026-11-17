@@ -62,6 +62,55 @@ guard() {
   [ ! -e "$WORK/nginx.conf.sigil" ]
 }
 
+@test "remove nginx.conf.sigil com } dentro de string (não fecha a ação)" {
+  printf '{{ sh "echo }" }}\n' >"$WORK/nginx.conf.sigil"
+  run guard
+  [ ! -e "$WORK/nginx.conf.sigil" ]
+}
+
+@test "remove nginx.conf.sigil com }} e {{ escondidos em strings" {
+  printf '{{ print "}}" | sh | print "{{" }}\n' >"$WORK/nginx.conf.sigil"
+  run guard
+  [ ! -e "$WORK/nginx.conf.sigil" ]
+}
+
+@test "remove nginx.conf.sigil com } em string crua e em caractere" {
+  printf '{{ file `/etc/passwd}` }}\n' >"$WORK/nginx.conf.sigil"
+  run guard
+  [ ! -e "$WORK/nginx.conf.sigil" ]
+  printf "{{ print '}' | sh }}\n" >"$WORK/nginx.conf.sigil"
+  run guard
+  [ ! -e "$WORK/nginx.conf.sigil" ]
+}
+
+@test "remove nginx.conf.sigil com ação que não fecha" {
+  printf 'server {}\n{{ sh "id"\n' >"$WORK/nginx.conf.sigil"
+  run guard
+  [ ! -e "$WORK/nginx.conf.sigil" ]
+}
+
+@test "mantém nginx.conf.sigil com nome de função só dentro de string ou fora de ação" {
+  cat >"$WORK/nginx.conf.sigil" <<'SIGIL'
+include {{ $.DOKKU_ROOT }}/{{ $.APP }}/nginx.conf.d/*.conf;
+add_header X-Note "{{ $.APP }} sh file";
+{{ if eq $.APP "sh" }}# text{{ end }}
+location / { return 200 "}}"; }
+SIGIL
+  run guard
+  [ -f "$WORK/nginx.conf.sigil" ]
+  [ -z "$output" ]
+}
+
+@test "remove CHECKS e nginx.conf.sigil quando o app define SIGIL_DELIMS" {
+  mkdir -p "$BATS_TEST_TMPDIR/plugins/config"
+  echo 'config_get() { [[ "$1" == "meu-app" && "$2" == "SIGIL_DELIMS" ]] && echo "[[,]]"; return 0; }' >"$BATS_TEST_TMPDIR/plugins/config/functions"
+  printf 'WAIT=5\n' >"$WORK/CHECKS"
+  printf 'server {}\n' >"$WORK/nginx.conf.sigil"
+  PLUGIN_AVAILABLE_PATH="$BATS_TEST_TMPDIR/plugins" run guard
+  [ ! -e "$WORK/CHECKS" ] && [ ! -e "$WORK/nginx.conf.sigil" ]
+  [[ "$output" == *"SIGIL_DELIMS"* ]]
+}
+
 @test "mantém nginx.conf.sigil só com variáveis e controle de fluxo" {
   cat >"$WORK/nginx.conf.sigil" <<'SIGIL'
 {{ range $port_map := .PROXY_PORT_MAP | split " " }}
