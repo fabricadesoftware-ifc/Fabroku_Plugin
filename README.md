@@ -66,12 +66,33 @@ O `enable.sh` é idempotente e instala/atualiza o `00-fabroku-guard` a partir de
 `guard/`. Confira com `ls /var/lib/dokku/plugins/enabled | head` (deve aparecer
 `00-fabroku-guard`).
 
+## Frontend estático em duas etapas (core-post-extract)
+
+A receita de frontend do Fabroku (`.buildpacks` com nodejs + nginx/static) gerava
+imagens de 260–860 MB: o Node e o `node_modules` usados só para compilar iam
+junto para produção. Medido em nov/2026: um site com 12 MB de `dist` ocupava 637 MB.
+
+Quando o repositório segue essa receita **e não tem `Dockerfile` próprio**, o trigger
+`core-post-extract` gera um `Dockerfile` em duas etapas (node compila, `nginx:1.27-alpine`
+serve só o resultado, na porta 5000 como antes) e tira o `.buildpacks` da pasta de build.
+Resultado nos testes com apps reais: 1.492 MB → 51 MB e 1.703 MB → 52 MB (a base nginx
+é compartilhada entre os apps).
+
+- Variáveis do app (`VITE_*` etc.) entram **só na etapa de build**; `DOKKU_*` e `GIT_REV` ficam de fora.
+- Versão do Node: `engines.node` do `package.json` (18–24), senão 22.
+- Pasta publicada: `root` do `static.json`, senão `dist`, `build` ou `out`.
+- Rotas de SPA caem no `index.html`.
+- Não mexe em: repositório com `Dockerfile`, backend (buildpack python/ruby/php/java/go…),
+  app Node sem a receita estática, app com `BUILDPACK_URL` ou buildpacks definidos no Dokku.
+- Desligar para um app: `dokku config:set --no-restart <app> FABROKU_STATIC_BUILD=0`.
+
 ## Estrutura
 
 ```
 plugin.toml         metadados do plugin Dokku
 commands            ajuda (dokku help, dokku fabroku:help)
 install             trigger do Dokku: cria /var/lib/dokku/data/fabroku
+core-post-extract   trigger: frontend estático em duas etapas (ver acima)
 internal-functions  validação, estado e JSON compartilhados
 subcommands/        um executável por comando fabroku:*
 libexec/run-deploy  roda o git:sync --build fora da sessão SSH
@@ -85,7 +106,7 @@ docs/PLANO.md       desenho e decisões
 Precisa de `bats` e `shellcheck` (Linux ou WSL):
 
 ```bash
-shellcheck -s bash commands install internal-functions libexec/run-deploy guard/core-post-extract subcommands/* tests/fixtures/fake-dokku
+shellcheck -s bash commands install internal-functions core-post-extract libexec/run-deploy guard/core-post-extract subcommands/* tests/fixtures/fake-dokku
 bats tests
 ```
 

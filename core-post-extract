@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Trigger core-post-extract do Dokku: roda com o código do app já extraído em $2, antes do
+# builder-detect. Aqui o Fabroku troca o build de FRONTEND ESTÁTICO.
+#
+# Por que existe: a receita antiga (.buildpacks com nodejs + nginx/static) gera imagens de
+# 260–860 MB, porque o Node e o node_modules usados SÓ para compilar vão junto para produção
+# (medido em nov/2026: um frontend com 12 MB de dist ocupava 637 MB). Aqui, quando o repo
+# segue essa receita e não tem Dockerfile próprio, geramos um Dockerfile em duas etapas:
+# node compila, nginx-alpine serve só o resultado (~25 MB por app).
+#
+# Desligar para um app:  dokku config:set --no-restart <app> FABROKU_STATIC_BUILD=0
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+
+declare APP="$1" WORK_DIR="$2"
+static-log() { echo "=====> fabroku-static ($APP): $*"; }
+
+static-is-candidate() {
+  [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] || return 1
+  [[ -f "$WORK_DIR/Dockerfile" ]] && return 1                 # o aluno escolheu o próprio build
+  [[ -f "$WORK_DIR/package.json" && ! -L "$WORK_DIR/package.json" ]] || return 1
+  jq -e '.scripts.build | type == "string"' "$WORK_DIR/package.json" >/dev/null 2>&1 || return 1
+  # só a receita de site estático do Fabroku (nginx/static), nunca um backend Node
+  if [[ -f "$WORK_DIR/.buildpacks" ]]; then
+    grep -qiE 'buildpack-nginx|heroku-buildpack-static|heroku-buildpack-nginx' "$WORK_DIR/.buildpacks" || return 1
+    grep -qiE 'buildpack-(python|ruby|php|java|jvm|go|gradle|scala|clojure|elixir)' "$WORK_DIR/.buildpacks" && return 1
+  elif [[ ! -f "$WORK_DIR/static.json" ]]; then
+    return 1
+  fi
+  return 0
+}
+
+static-config-json() { dokku config:export --format json "$APP" 2>/dev/null || echo '{}'; }
+
+static-main() {
+  static-is-candidate || return 0
+  local cfg
+  cfg="$(static-config-json)"
+  if [[ "$(jq -r '.FABROKU_STATIC_BUILD // ""' <<<"$cfg")" == "0" ]]; then
+    static-log "desligado por FABROKU_STATIC_BUILD=0; usando buildpacks"
+    return 0
+  fi
+  # buildpack definido por config/comando também força o herokuish: aí não mexemos
+  if [[ -n "$(jq -r '.BUILDPACK_URL // ""' <<<"$cfg")" ]] || [[ -s "/home/dokku/$APP/BUILDPACKS" ]]; then
+    static-log "buildpack configurado no app; mantendo buildpacks"
+    return 0
+  fi
+
+  local node_major root
+  node_major="$(jq -r '.engines.node // ""' "$WORK_DIR/package.json" | grep -oE '[0-9]+' | head -1 || true)"
+  [[ "$node_major" =~ ^[0-9]+$ && "$node_major" -ge 18 && "$node_major" -le 24 ]] || node_major=22
+  root=""
+  [[ -f "$WORK_DIR/static.json" ]] && root="$(jq -r '.root // ""' "$WORK_DIR/static.json" 2>/dev/null | sed 's#/*$##; s#^\./##')"
+  [[ "$root" =~ ^[A-Za-z0-9._/-]*$ && "$root" != *..* ]] || root=""
+
+  # variáveis do app disponíveis SÓ na etapa de build (Vite/React leem na compilação);
+  # a imagem final recebe apenas os arquivos compilados.
+  jq -r 'to_entries[] | select(.key | test("^(DOKKU_|GIT_REV$|FABROKU_STATIC_BUILD$)") | not)
+         | select(.key | test("^[A-Za-z_][A-Za-z0-9_]*$")) | "\(.key)=\(.value | tostring | @sh)"' <<<"$cfg" \
+    >"$WORK_DIR/.fabroku-build.env"
+
+  cat >"$WORK_DIR/.fabroku-nginx.conf" <<'NGINX'
+server {
+    listen 5000;
+    root /usr/share/nginx/html;
+    index index.html;
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+    location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+    location / {
+        try_files $uri $uri/ $uri.html /index.html;
+    }
+}
+NGINX
+
+  cat >"$WORK_DIR/Dockerfile" <<DOCKERFILE
+# Gerado pelo Fabroku (fabroku-static): build em duas etapas para frontend estático.
+FROM node:${node_major}-alpine AS build
+WORKDIR /src
+COPY . .
+RUN set -e; \\
+    set -a; . ./.fabroku-build.env; set +a; rm -f .fabroku-build.env; \\
+    if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile && pnpm run build; \\
+    elif [ -f yarn.lock ]; then corepack enable && yarn install --frozen-lockfile && yarn run build; \\
+    elif [ -f package-lock.json ]; then npm ci && npm run build; \\
+    else npm install && npm run build; fi; \\
+    mkdir -p /out; \\
+    for d in ${root:+$root} dist build out; do if [ -f "\$d/index.html" ]; then cp -a "\$d"/. /out/; break; fi; done; \\
+    test -f /out/index.html || { echo "fabroku-static: index.html não encontrado em ${root:+$root }dist/build/out"; exit 1; }
+
+FROM nginx:1.27-alpine
+COPY --from=build /out /usr/share/nginx/html
+COPY .fabroku-nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 5000
+DOCKERFILE
+
+  # .buildpacks faria o Dokku escolher o herokuish (ver builder-dockerfile/builder-detect)
+  rm -f "$WORK_DIR/.buildpacks"
+  static-log "frontend estático: build em duas etapas (node ${node_major} -> nginx-alpine)${root:+, pasta $root}"
+}
+
+static-main

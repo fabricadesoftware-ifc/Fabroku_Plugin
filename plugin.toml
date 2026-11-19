@@ -1,4 +1,4 @@
 [plugin]
 description = "Deploy desacoplado da conexão SSH para o Fabroku PaaS"
-version = "0.4.1"
+version = "0.5.0"
 [plugin.config]
