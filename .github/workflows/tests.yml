@@ -18,7 +18,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bats shellcheck
 
       - name: Shellcheck
-        run: shellcheck -s bash commands install internal-functions libexec/run-deploy subcommands/* tests/fixtures/fake-dokku
+        run: shellcheck -s bash commands install internal-functions core-post-extract libexec/run-deploy subcommands/* tests/fixtures/fake-dokku
 
       - name: Bats
         run: bats tests
