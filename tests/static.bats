@@ -34,8 +34,8 @@ hook() {
   [ ! -e "$WORK/.buildpacks" ]
   grep -q '^FROM node:22-alpine AS build' "$WORK/Dockerfile"
   grep -q '^FROM nginx:1.27-alpine' "$WORK/Dockerfile"
-  grep -q '^EXPOSE 5000' "$WORK/Dockerfile"
-  grep -q 'listen 5000;' "$WORK/.fabroku-nginx.conf"
+  grep -q '^EXPOSE 80$' "$WORK/Dockerfile"
+  grep -q 'listen 80;' "$WORK/.fabroku-nginx.conf"
   [[ "$output" == *"build em duas etapas"* ]]
 }
 
