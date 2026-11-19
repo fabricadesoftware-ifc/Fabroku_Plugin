@@ -61,7 +61,7 @@ static-main() {
 
   cat >"$WORK_DIR/.fabroku-nginx.conf" <<'NGINX'
 server {
-    listen 5000;
+    listen 80;
     root /usr/share/nginx/html;
     index index.html;
     gzip on;
@@ -95,7 +95,7 @@ RUN set -e; \\
 FROM nginx:1.27-alpine
 COPY --from=build /out /usr/share/nginx/html
 COPY .fabroku-nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 5000
+EXPOSE 80
 DOCKERFILE
 
   # .buildpacks faria o Dokku escolher o herokuish (ver builder-dockerfile/builder-detect)

@@ -74,7 +74,9 @@ junto para produção. Medido em nov/2026: um site com 12 MB de `dist` ocupava 6
 
 Quando o repositório segue essa receita **e não tem `Dockerfile` próprio**, o trigger
 `core-post-extract` gera um `Dockerfile` em duas etapas (node compila, `nginx:1.27-alpine`
-serve só o resultado, na porta 5000 como antes) e tira o `.buildpacks` da pasta de build.
+serve só o resultado na porta 80) e tira o `.buildpacks` da pasta de build. Porta 80
+porque o Dokku mapeia cada `EXPOSE` do Dockerfile para a mesma porta do host
+(`http:5000:5000` deixaria o site fora da porta 80); com 80 o mapa fica `http:80:80`.
 Resultado nos testes com apps reais: 1.492 MB → 51 MB e 1.703 MB → 52 MB (a base nginx
 é compartilhada entre os apps).
 
